@@ -232,11 +232,12 @@ ch_bucket_init(struct d_hash_table *htable, struct d_hash_bucket *bucket)
 		goto out;
 
 	if (htable->ht_feats & D_HASH_FT_MUTEX)
-		rc = D_MUTEX_INIT(&bucket->hb_mutex, NULL);
+		rc = D_MUTEX_INIT(&bucket->hb_lock.mutex, NULL);
 	else if (htable->ht_feats & D_HASH_FT_RWLOCK)
-		rc = D_RWLOCK_INIT(&bucket->hb_rwlock, NULL);
+		rc = D_RWLOCK_INIT(&bucket->hb_lock.rwlock, NULL);
 	else
-		rc = D_SPIN_INIT(&bucket->hb_spin, PTHREAD_PROCESS_PRIVATE);
+		rc = D_SPIN_INIT(&bucket->hb_lock.spin,
+				 PTHREAD_PROCESS_PRIVATE);
 out:
 	return rc;
 }
@@ -248,11 +249,11 @@ ch_bucket_fini(struct d_hash_table *htable, struct d_hash_bucket *bucket)
 		return;
 
 	if (htable->ht_feats & D_HASH_FT_MUTEX)
-		D_MUTEX_DESTROY(&bucket->hb_mutex);
+		D_MUTEX_DESTROY(&bucket->hb_lock.mutex);
 	else if (htable->ht_feats & D_HASH_FT_RWLOCK)
-		D_RWLOCK_DESTROY(&bucket->hb_rwlock);
+		D_RWLOCK_DESTROY(&bucket->hb_lock.rwlock);
 	else
-		D_SPIN_DESTROY(&bucket->hb_spin);
+		D_SPIN_DESTROY(&bucket->hb_lock.spin);
 }
 
 /**
@@ -266,18 +267,22 @@ static inline void
 ch_bucket_lock(struct d_hash_table *htable, struct d_hash_bucket *bucket,
 	       bool read_only)
 {
+	union d_hash_lock *lock;
+
 	if (htable->ht_feats & D_HASH_FT_NOLOCK)
 		return;
 
+	lock = (htable->ht_feats & D_HASH_FT_GLOCK)
+		? &htable->ht_lock : &bucket->hb_lock;
 	if (htable->ht_feats & D_HASH_FT_MUTEX) {
-		D_MUTEX_LOCK(&bucket->hb_mutex);
+		D_MUTEX_LOCK(&lock->mutex);
 	} else if (htable->ht_feats & D_HASH_FT_RWLOCK) {
 		if (read_only)
-			D_RWLOCK_RDLOCK(&bucket->hb_rwlock);
+			D_RWLOCK_RDLOCK(&lock->rwlock);
 		else
-			D_RWLOCK_WRLOCK(&bucket->hb_rwlock);
+			D_RWLOCK_WRLOCK(&lock->rwlock);
 	} else {
-		D_SPIN_LOCK(&bucket->hb_spin);
+		D_SPIN_LOCK(&lock->spin);
 	}
 }
 
@@ -286,15 +291,19 @@ static inline void
 ch_bucket_unlock(struct d_hash_table *htable, struct d_hash_bucket *bucket,
 		 bool read_only)
 {
+	union d_hash_lock *lock;
+
 	if (htable->ht_feats & D_HASH_FT_NOLOCK)
 		return;
 
+	lock = (htable->ht_feats & D_HASH_FT_GLOCK)
+		? &htable->ht_lock : &bucket->hb_lock;
 	if (htable->ht_feats & D_HASH_FT_MUTEX)
-		D_MUTEX_UNLOCK(&bucket->hb_mutex);
+		D_MUTEX_UNLOCK(&lock->mutex);
 	else if (htable->ht_feats & D_HASH_FT_RWLOCK)
-		D_RWLOCK_UNLOCK(&bucket->hb_rwlock);
+		D_RWLOCK_UNLOCK(&lock->rwlock);
 	else
-		D_SPIN_UNLOCK(&bucket->hb_spin);
+		D_SPIN_UNLOCK(&lock->spin);
 }
 
 /**
@@ -335,9 +344,13 @@ ch_key_hash(struct d_hash_table *htable, const void *key, unsigned int ksize)
 static inline uint32_t
 ch_rec_hash(struct d_hash_table *htable, d_list_t *link)
 {
-	uint32_t idx;
+	uint32_t idx = 0;
 
-	idx = htable->ht_ops->hop_rec_hash(htable, link);
+	if (htable->ht_ops->hop_rec_hash)
+		idx = htable->ht_ops->hop_rec_hash(htable, link);
+	else
+		D_ASSERT(htable->ht_feats &
+			 (D_HASH_FT_NOLOCK | D_HASH_FT_GLOCK));
 
 	return idx & ((1U << htable->ht_bits) - 1);
 }
@@ -446,7 +459,8 @@ ch_rec_find(struct d_hash_table *htable, struct d_hash_bucket *bucket,
 					d_list_move(link, &bucket->hb_head);
 				else if (lru == D_HASH_LRU_TAIL &&
 					 link != bucket->hb_head.prev)
-					d_list_move_tail(link, &bucket->hb_head);
+					d_list_move_tail(link,
+							 &bucket->hb_head);
 			}
 			return link;
 		}
@@ -770,7 +784,6 @@ d_hash_table_create_inplace(uint32_t feats, uint32_t bits, void *priv,
 
 	D_ASSERT(hops != NULL);
 	D_ASSERT(hops->hop_key_cmp  != NULL);
-	D_ASSERT(hops->hop_rec_hash != NULL || (feats & D_HASH_FT_NOLOCK));
 
 	htable->ht_feats = feats;
 	htable->ht_bits	 = bits;
@@ -790,8 +803,28 @@ d_hash_table_create_inplace(uint32_t feats, uint32_t bits, void *priv,
 			D_GOTO(out, rc);
 		}
 	}
-
 	htable->ht_buckets = buckets;
+
+	if (htable->ht_feats & D_HASH_FT_MUTEX)
+		rc = D_MUTEX_INIT(&htable->ht_lock.mutex, NULL);
+	else if (htable->ht_feats & D_HASH_FT_RWLOCK)
+		rc = D_RWLOCK_INIT(&htable->ht_lock.rwlock, NULL);
+	else
+		rc = D_SPIN_INIT(&htable->ht_lock.spin,
+				 PTHREAD_PROCESS_PRIVATE);
+	if (rc) {
+		for (i = 0; i < nr; i++)
+			ch_bucket_fini(htable, &buckets[i]);
+		D_FREE(buckets);
+		D_GOTO(out, rc);
+	}
+
+	if (hops->hop_rec_hash == NULL && !(feats & D_HASH_FT_NOLOCK)) {
+		htable->ht_feats |= D_HASH_FT_GLOCK;
+		D_WARN("The d_hash_table_ops_t->hop_rec_hash() callback is "
+			"not provided!\nTherefore the whole hash table locking "
+			"will be used for backward compatibility.\n");
+	}
 out:
 	return rc;
 }
@@ -903,6 +936,13 @@ d_hash_table_destroy_inplace(struct d_hash_table *htable, bool force)
 		ch_bucket_fini(htable, bucket);
 	}
 	D_FREE(htable->ht_buckets);
+
+	if (htable->ht_feats & D_HASH_FT_MUTEX)
+		D_MUTEX_DESTROY(&htable->ht_lock.mutex);
+	else if (htable->ht_feats & D_HASH_FT_RWLOCK)
+		D_RWLOCK_DESTROY(&htable->ht_lock.rwlock);
+	else
+		D_SPIN_DESTROY(&htable->ht_lock.spin);
 out:
 	memset(htable, 0, sizeof(*htable));
 err:

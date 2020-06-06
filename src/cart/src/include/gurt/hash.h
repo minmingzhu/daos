@@ -227,16 +227,24 @@ enum d_hash_feats {
 	 * So, next search for it will be much faster.
 	 */
 	D_HASH_FT_LRU		= (1 << 4),
+
+	/**
+	 * Use Global Table Lock instead of per bucket locking.
+	 * TODO: should be removed when all will use per bucket locking.
+	 */
+	D_HASH_FT_GLOCK		= (1 << 15),
+};
+
+union d_hash_lock {
+	pthread_spinlock_t	spin;
+	pthread_mutex_t		mutex;
+	pthread_rwlock_t	rwlock;
 };
 
 struct d_hash_bucket {
 	d_list_t		hb_head;
 	/** different type of locks based on ht_feats */
-	union {
-		pthread_spinlock_t	hb_spin;
-		pthread_mutex_t		hb_mutex;
-		pthread_rwlock_t	hb_rwlock;
-	};
+	union d_hash_lock	hb_lock;
 #if D_HASH_DEBUG
 	unsigned int		hb_dep;
 #endif
@@ -261,8 +269,9 @@ struct d_hash_table {
 	d_hash_table_ops_t	*ht_ops;
 	/** array of buckets */
 	struct d_hash_bucket	*ht_buckets;
+	/** different type of locks based on ht_feats */
+	union d_hash_lock	 ht_lock;
 };
-
 
 /**
  * Create a new hash table.
@@ -618,7 +627,7 @@ struct d_ulink {
 	struct d_rlink		 ul_link;
 	struct d_uuid		 ul_uuid;
 	struct d_ulink_ops	*ul_ops;
-	/** optional agrument for compare callback */
+	/** optional argument for compare callback */
 	void			*ul_cmp_args;
 };
 
