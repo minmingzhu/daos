@@ -198,22 +198,24 @@ daos_lru_cache_evict(struct daos_lru_cache *lcache,
 	D_ASSERT(rc == 0);
 
 	d_list_for_each_entry_safe(llink, tmp, &cb_arg.list, ll_qlink) {
-		if (llink->ll_evicted) {
-			if (llink->ll_ref == 1) {
-				D_DEBUG(DB_TRACE, "Remove %p from LRU cache\n",
-					llink);
-				d_hash_rec_delete_at(&lcache->dlc_htable,
-						     &llink->ll_link);
-				lcache->dlc_count--;
+		d_list_del_init(&llink->ll_qlink);
+		if (llink->ll_ref == 1) {
+			D_DEBUG(DB_TRACE, "Remove %p from LRU cache\n",
+				llink);
+			d_hash_rec_delete_at(&lcache->dlc_htable,
+					     &llink->ll_link);
+			lcache->dlc_count--;
+			count++;
+		} else {
+			if (!llink->ll_evicted) {
+				/*
+				 * will be evicted later
+				 * in daos_lru_ref_release
+				 */
+				daos_lru_ref_evict(lcache, llink);
 				count++;
 			}
-		} else {
-			/* will be evicted later in daos_lru_ref_release */
-			daos_lru_ref_evict(lcache, llink);
-			count++;
 		}
-		if (!d_list_empty(&llink->ll_qlink))
-			d_list_del_init(&llink->ll_qlink);
 	}
 	D_DEBUG(DB_TRACE, "Evicted %u items\n", count);
 }
