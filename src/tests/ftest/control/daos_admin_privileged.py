@@ -85,7 +85,18 @@ class DaosAdminPrivTest(TestWithServers):
         try:
             self.server_managers[0].prepare_storage(user, True, False)
         except ServerFailed as error:
-            self.fail("Failed preparing SCM as user {}: {}".format(user, error))
+            # run diagnostics
+            import subprocess
+            cmds = "ls -l /dev/pmem*; ipmctl show -dimm"
+            diags = ""
+            try:
+                diags = subprocess.check_output(
+                    ['clush', '-B', '-S', '-w',
+                     ','.join(self.hostlist_servers), cmds])
+            except subprocess.CalledProcessError:
+                pass
+            self.fail("Failed preparing SCM as user {}: {}\n{}".format(
+                user, error, diags))
 
         # Uncomment the below line after DAOS-4287 is resolved
         # # Prep server for format, run command under non-root user
