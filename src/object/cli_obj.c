@@ -1573,12 +1573,6 @@ obj_req_valid(tse_task_t *task, void *args, int opc, struct dc_obj_epoch *epoch,
 			}
 		}
 
-		if (daos_handle_is_valid(l_args->th) && l_args->eprs != NULL) {
-			D_ERROR("epoch range is not allowed for transactional "
-				"listing\n");
-			D_GOTO(out, rc = -DER_INVAL);
-		}
-
 		rc = dc_tx_hdl2epoch_and_pmv(l_args->th, epoch, pm_ver);
 		if (rc != 0) {
 			if (rc != -DER_INVAL)
