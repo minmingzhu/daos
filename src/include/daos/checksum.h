@@ -35,29 +35,6 @@
  * Container Property Knowledge
  * -----------------------------------------------------------
  */
-uint32_t
-daos_cont_prop2csum(daos_prop_t *props);
-
-uint64_t
-daos_cont_prop2chunksize(daos_prop_t *props);
-
-bool
-daos_cont_prop2serververify(daos_prop_t *props);
-
-bool
-daos_cont_prop2dedup(daos_prop_t *props);
-
-bool
-daos_cont_prop2dedupverify(daos_prop_t *props);
-
-uint64_t
-daos_cont_prop2dedupsize(daos_prop_t *props);
-
-bool
-daos_cont_csum_prop_is_valid(uint16_t val);
-
-bool
-daos_cont_csum_prop_is_enabled(uint16_t val);
 
 /** Convert a string into a property value for csum property */
 int
@@ -104,7 +81,6 @@ struct dcs_csum_info {
 	uint32_t	 cs_chunksize;
 };
 
-
 struct dcs_iod_csums {
 	/** akey checksum */
 	struct dcs_csum_info	 ic_akey;
@@ -131,8 +107,6 @@ struct csum_ft;
 struct daos_csummer {
 	/** Size of csum_buf. */
 	uint32_t	 dcs_csum_buf_size;
-	/** whether checksum is enabled */
-	bool		 dcs_csum;
 	/** Cached configuration for chunk size*/
 	uint32_t	 dcs_chunk_size;
 	/** Pointer to the function table to be used for calculating csums */
@@ -141,10 +115,12 @@ struct daos_csummer {
 	void		*dcs_ctx;
 	/** Points to the buffer where the  calculated csum is to be written */
 	uint8_t		*dcs_csum_buf;
+	/** Whether or not to verify on the server on an update */
 	bool		 dcs_srv_verify;
-	bool		 dcs_dedup;
-	bool		 dcs_dedup_verify;
-	uint32_t	 dcs_dedup_size;
+	/** Disable aspects of the checksum process */
+	bool		 dcs_skip_key_calc;
+	bool		 dcs_skip_key_verify;
+	bool		 dcs_skip_data_verify;
 };
 
 struct csum_ft {
@@ -192,8 +168,7 @@ daos_csum_type2algo(enum DAOS_CSUM_TYPE type);
  */
 int
 daos_csummer_init(struct daos_csummer **obj, struct csum_ft *ft,
-		  size_t chunk_bytes, bool srv_verify, bool dedup,
-		  bool dedup_verify, size_t dedup_bytes);
+		  size_t chunk_bytes, bool srv_verify);
 
 /**
  * Initialize the daos_csummer with a known DAOS_CSUM_TYPE
@@ -211,8 +186,7 @@ daos_csummer_init(struct daos_csummer **obj, struct csum_ft *ft,
  */
 int
 daos_csummer_type_init(struct daos_csummer **obj, enum DAOS_CSUM_TYPE type,
-		       size_t chunk_bytes, bool srv_verify, bool dedup,
-		       bool dedup_verify, size_t dedup_bytes);
+		       size_t chunk_bytes, bool srv_verify);
 
 /** Destroy the daos_csummer */
 void
@@ -225,10 +199,6 @@ daos_csummer_get_csum_len(struct daos_csummer *obj);
 /** Determine if the checksums is configured. */
 bool
 daos_csummer_initialized(struct daos_csummer *obj);
-
-/** report whether chechsum feature is enabled */
-bool
-daos_csummer_get_csum(struct daos_csummer *obj);
 
 /** Get an integer representing the csum type the csummer is configured with */
 uint16_t
@@ -243,16 +213,6 @@ daos_csummer_get_rec_chunksize(struct daos_csummer *obj, uint64_t rec_size);
 
 bool
 daos_csummer_get_srv_verify(struct daos_csummer *obj);
-
-/** report whether dedup feature is enabled */
-bool
-daos_csummer_get_dedup(struct daos_csummer *obj);
-
-bool
-daos_csummer_get_dedupverify(struct daos_csummer *obj);
-
-uint32_t
-daos_csummer_get_dedupsize(struct daos_csummer *obj);
 
 /** Get a string representing the csum the csummer is configured with */
 char *
