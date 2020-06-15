@@ -41,7 +41,8 @@ post_provision_config_nodes() {
     zypper --non-interactive rm python2-Fabric Modules
     zypper --non-interactive in python2-avocado-plugins-varianter-yaml-to-mux \
                                 python2-avocado-plugins-output-html           \
-                                patch python2-Jinja2 pciutils lua-lmod
+                                patch python2-Jinja2 pciutils lua-lmod ndctl  \
+                                ipmctl
     zypper --non-interactive rr 15.2_oss
     rpm -qa | grep kernel
     

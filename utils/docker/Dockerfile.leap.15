@@ -68,7 +68,7 @@ RUN zypper --non-interactive rm Modules;                                        
 RUN zypper --non-interactive addrepo \
     https://download.opensuse.org/repositories/devel:languages:go/openSUSE_Leap_15.1/devel:languages:go.repo; \
     zypper --non-interactive --gpg-auto-import-keys refresh; \
-    zypper --non-interactive install -y ipmctl-devel go
+    zypper --non-interactive install -y go
 
 # Add DAOS user
 ENV USER daos
@@ -115,6 +115,11 @@ RUN if $QUICKBUILD; then                                                        
     fi
 
 RUN zypper --non-interactive install https://download.opensuse.org/distribution/leap/15.2/repo/oss/x86_64/scons-3.1.2-lp152.2.1.x86_64.rpm
+
+# get newer ipmctl from Leap 15.2
+RUN zypper --non-interactive ar http://download.opensuse.org/distribution/leap/15.2/repo/oss/ 15.2_oss; \                
+    zypper --non-interactive --gpg-auto-import-keys ref avocado 15.2_oss;                               \
+    zypper --non-interactive install -y ipmctl-devel
 
 # force an upgrade to get any newly built RPMs
 ARG CACHEBUST=1
