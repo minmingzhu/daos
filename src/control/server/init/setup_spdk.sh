@@ -67,7 +67,9 @@ if [ ! -f "$scriptpath" ]; then
     if [ -f /usr/share/spdk/scripts/setup.sh ]; then
         scriptpath=/usr/share/spdk/scripts/setup.sh
 	else
-	    echo "Could not find the SPDK setup.sh script" >&2
+	    echo "Could not find the SPDK setup.sh script at $scriptpath or /usr/share/spdk/scripts/setup.sh" >&2
+	    rpm -qa | grep spdk >&2
+	    ls -l /usr/share/spdk/scripts/setup.sh >&2
 		exit 1
 	fi
 fi

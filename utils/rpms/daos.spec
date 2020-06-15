@@ -6,7 +6,7 @@
 
 Name:          daos
 Version:       1.1.0
-Release:       24{?relval}%{?dist}
+Release:       24%{?relval}%{?dist}
 Summary:       DAOS Storage Engine
 
 License:       Apache
@@ -365,7 +365,7 @@ getent passwd daos_server >/dev/null || useradd -M daos_server
 %{_libdir}/*.a
 
 %changelog
-* Mon Jun 08 2020 Brian J. Murrell <brian.murrell@intel.com> - 1.1.0-24
+* Mon Jun 15 2020 Brian J. Murrell <brian.murrell@intel.com> - 1.1.0-24
 - Change fuse requirement to fuse3
 - Use Lmod for MPI module loading
 
