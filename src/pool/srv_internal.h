@@ -79,8 +79,13 @@ struct pool_iv_conn {
 	char		pic_creds[0];
 };
 
+/* Note this structure must be smaller than IV_KEY_BUF_SIZE */
 struct pool_iv_key {
 	uint32_t	pik_entry_size; /* IV entry size */
+	union {
+		/* Used for class_id == IV_POOL_CONN */
+		uuid_t	poh_uuid;
+	};
 };
 
 struct pool_iv_entry {
@@ -141,6 +146,7 @@ void ds_pool_child_purge(struct pool_tls *tls);
 void ds_pool_replicas_update_handler(crt_rpc_t *rpc);
 int ds_pool_tgt_prop_update(struct ds_pool *pool, struct pool_iv_prop *iv_prop);
 int ds_pool_tgt_connect(struct ds_pool *pool, struct pool_iv_conn *pic);
+void ds_pool_tgt_fetch_hdls_handler(crt_rpc_t *rpc);
 
 /*
  * srv_util.c
@@ -159,6 +165,7 @@ uint32_t pool_iv_map_ent_size(int nr);
 int ds_pool_iv_init(void);
 int ds_pool_iv_fini(void);
 int pool_iv_map_fetch(void *ns, struct pool_iv_entry *pool_iv);
+int pool_iv_hdl_fetch(void *ns, uuid_t hdl_uuid, d_iov_t *pool_iv);
 void ds_pool_map_refresh_ult(void *arg);
 
 int ds_pool_iv_hdl_update(struct ds_pool *pool, uuid_t hdl_uuid,

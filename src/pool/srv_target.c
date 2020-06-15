@@ -835,7 +835,7 @@ ds_pool_tgt_disconnect_handler(crt_rpc_t *rpc)
 
 	rc = 0;
 out:
-	out->tdo_rc = (rc == 0 ? 0 : 1);
+	out->tdo_rc = rc;
 	D_DEBUG(DF_DSMS, DF_UUID": replying rpc %p: %d "DF_RC"\n",
 		DP_UUID(in->tdi_uuid), rpc, out->tdo_rc, DP_RC(rc));
 	crt_reply_send(rpc);
@@ -1028,6 +1028,92 @@ ds_pool_tgt_query_handler(crt_rpc_t *rpc)
 	ds_pool_put(pool);
 out:
 	out->tqo_rc = (rc == 0 ? 0 : 1);
+	crt_reply_send(rpc);
+}
+
+static int
+fetch_and_connect(struct ds_pool *pool, uuid_t handle_uuid)
+{
+	struct pool_iv_conn *conn_args;
+	d_iov_t conn_args_iov;
+	int rc;
+
+	/* This buffer will likely be reallocated by the IV fetch operation
+	 * in the event that the cred data is nonzero size
+	 * Thus because it might be realloc'd, it needs to not be stack
+	 * allocated
+	 */
+	D_ALLOC_PTR(conn_args);
+	if (conn_args == NULL)
+		D_GOTO(out, rc=-DER_NOMEM);
+
+	d_iov_set(&conn_args_iov, conn_args, sizeof(*conn_args));
+
+	rc = pool_iv_hdl_fetch(pool->sp_iv_ns, handle_uuid, &conn_args_iov);
+	if (rc != 0) {
+		D_ERROR(DF_UUID": pool_iv_hdl_fetch failed rc="DF_RC"\n",
+			DP_UUID(pool->sp_uuid), DP_RC(rc));
+		D_GOTO(out, rc);
+	}
+
+	/* In case the IV process reallocated the buffer */
+	conn_args = conn_args_iov.iov_buf;
+
+	rc = ds_pool_tgt_connect(pool, conn_args);
+	if (rc != 0) {
+		D_ERROR(DF_UUID": ds_pool_tgt_connect failed rc="DF_RC"\n",
+			DP_UUID(pool->sp_uuid), DP_RC(rc));
+		D_GOTO(out, rc);
+	}
+
+out:
+	if (conn_args != NULL)
+		D_FREE_PTR(conn_args);
+
+	if (rc != 0)
+		D_ERROR(DF_UUID": failed to restore open handle "DF_UUID
+			" rc="DF_RC"\n", DP_UUID(pool->sp_uuid),
+			DP_UUID(handle_uuid), DP_RC(rc));
+	else
+		D_DEBUG(DF_DSMS, DF_UUID": successfully restored open handle"
+			DF_UUID"\n", DP_UUID(pool->sp_uuid),
+			DP_UUID(handle_uuid));
+
+	return rc;
+}
+
+void
+ds_pool_tgt_fetch_hdls_handler(crt_rpc_t *rpc)
+{
+	struct pool_tgt_fetch_hdls_in	*in = crt_req_get(rpc);
+	struct pool_tgt_fetch_hdls_out	*out = crt_reply_get(rpc);
+	struct ds_pool			*pool;
+	uuid_t				*handles_uuids;
+	int				 nhandles;
+	int				 rc;
+	int				 i;
+
+	D_DEBUG(DF_DSMS, DF_UUID": processing rpc",
+		DP_UUID(in->tfi_pool_uuid));
+
+	pool = ds_pool_lookup(in->tfi_pool_uuid);
+	if (pool == NULL) {
+		D_ERROR("Failed to find pool "DF_UUID"\n",
+			DP_UUID(in->tfi_pool_uuid));
+		D_GOTO(out, rc = -DER_NONEXIST);
+	}
+
+	nhandles = in->tfi_hdls.iov_buf_len / sizeof(uuid_t);
+	handles_uuids = in->tfi_hdls.iov_buf;
+
+	for (i = 0; i < nhandles; i++) {
+		/* Regardless of outcome, attempt to connect all handles */
+		fetch_and_connect(pool, handles_uuids[i]);
+	}
+
+	ds_pool_put(pool);
+out:
+	out->tfo_rc = (rc == 0 ? 0 : 1);
 	crt_reply_send(rpc);
 }
 

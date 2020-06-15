@@ -3776,7 +3776,12 @@ out:
 }
 
 struct redist_open_hdls_arg {
-	struct pool_svc *svc;
+	/** Pointer to pointer containing start of uuids array */
+	uuid_t **handles_uuids;
+	/** Pointer to number of element in uuids array */
+	uint32_t *nhandles;
+	/** The index where the next handle should be loaded */
+	uint32_t next_idx;
 };
 
 static int
@@ -3784,7 +3789,6 @@ redist_open_hdls_cb(daos_handle_t ih, d_iov_t *key, d_iov_t *val, void *varg)
 {
 	struct redist_open_hdls_arg *arg = varg;
 	uuid_t *uuid = key->iov_buf;
-	struct pool_hdl *hdl = val->iov_buf;
 	int rc;
 
 	if (key->iov_len != sizeof(uuid_t) ||
@@ -3794,23 +3798,74 @@ redist_open_hdls_cb(daos_handle_t ih, d_iov_t *key, d_iov_t *val, void *varg)
 		return -DER_IO;
 	}
 
-	rc = pool_connect_iv_dist(arg->svc, *uuid, hdl->ph_flags,
-				  hdl->ph_sec_capas, &in->pci_cred);
-	if (rc != 0)
-		D_ERROR(DF_UUID": failed to connect to targets: "DF_RC"\n",
-			DP_UUID(*uuid), DP_RC(rc));
+	/* Iterator returned more handles than initially room allocated for -
+	 * need to expand the array
+	 */
+	if (arg->next_idx == *arg->nhandles) {
+		*arg->nhandles += 1;
+		D_REALLOC_ARRAY(*arg->handles_uuids, *arg->handles_uuids,
+				*arg->nhandles);
+		if (*arg->handles_uuids == NULL)
+			return -DER_NOMEM;
+	}
+	D_ASSERT(arg->next_idx < *arg->nhandles);
+
+	/* Store the uuid */
+	uuid_copy((*arg->handles_uuids)[arg->next_idx], *uuid);
+	arg->next_idx++;
 
 	return rc;
 }
 
 static int
-redist_open_hdls(uuid_t pool_uuid)
+redist_open_hdls_send_rpcs(uuid_t pool_uuid, uuid_t *handles_uuids,
+			   uint32_t nhandles, d_rank_list_t *targets)
+{
+	crt_rpc_t			*tf_req;
+	struct pool_tgt_fetch_hdls_in	*tf_in;
+	struct pool_tgt_fetch_hdls_out	*tf_out;
+	int				topo;
+	int				rc;
+
+	/* Collective RPC to destroy the pool on all of targets */
+	topo = crt_tree_topo(CRT_TREE_KNOMIAL, 4);
+	rc = crt_corpc_req_create(dss_get_module_info()->dmi_ctx, NULL,
+				  targets, POOL_TGT_FETCH_HDLS, NULL, NULL,
+				  0, topo, &tf_req);
+	if (rc)
+		return rc;
+
+	tf_in = crt_req_get(tf_req);
+	D_ASSERT(tf_in != NULL);
+	uuid_copy(tf_in->tfi_pool_uuid, pool_uuid);
+	d_iov_set(&tf_in->tfi_hdls, handles_uuids, sizeof(uuid_t) * nhandles);
+
+	rc = dss_rpc_send(tf_req);
+	if (rc == 0 && DAOS_FAIL_CHECK(DAOS_POOL_DESTROY_FAIL_CORPC))
+		rc = -DER_TIMEDOUT;
+	if (rc != 0)
+		D_GOTO(out_rpc, rc);
+
+	tf_out = crt_reply_get(tf_req);
+	rc = tf_out->tfo_rc;
+	if (rc != 0)
+		D_ERROR(DF_UUID": failed to send handle uuids to targets "
+			DF_RC"\n", DP_UUID(pool_uuid), DP_RC(rc));
+out_rpc:
+	crt_req_decref(tf_req);
+
+	return rc;
+}
+
+static int
+redist_open_hdls(uuid_t pool_uuid, d_rank_list_t *targets)
 {
 	struct pool_svc			*svc;
 	struct redist_open_hdls_arg	 arg;
 	uint32_t			 connectable;
 	struct rdb_tx			 tx;
 	d_iov_t				 value;
+	uuid_t				*handles_uuids;
 	uint32_t			 nhandles;
 	int				 rc;
 
@@ -3844,27 +3899,49 @@ redist_open_hdls(uuid_t pool_uuid)
 	if (rc != 0)
 		D_GOTO(out_lock, rc);
 
-	D_DEBUG(DF_DSMS, DF_UUID": need to re-distribute %u handles\n",
-		DP_UUID(pool_uuid), nhandles);
-
 	/* Abort early if there are no open handles */
 	if (nhandles == 0)
 		D_GOTO(out_lock, rc);
 
-	arg.svc = svc;
+	D_ALLOC_ARRAY(handles_uuids, nhandles);
+	if (handles_uuids == NULL)
+		D_GOTO(out_lock, rc=-DER_NOMEM);
 
-	/* Iterate the open handles and re-update them with IV */
+	/* Pass in the preallocated array and handles as pointers
+	 * This allows the iterator to reallocate the array if an element
+	 * was added between when we retrieved the size and iteration completes
+	 */
+	arg.handles_uuids = &handles_uuids;
+	arg.nhandles = &nhandles;
+	arg.next_idx = 0;
+
+	/* Iterate the open handles and accumulate their UUIDs */
 	rc = rdb_tx_iterate(&tx, &svc->ps_handles, false /* backward */,
 			    redist_open_hdls_cb, &arg);
 	if (rc != 0)
 		D_GOTO(out_lock, rc);
 
+	/* Unlock the RDB and release the leader before sending RPC */
 out_lock:
 	ABT_rwlock_unlock(svc->ps_lock);
 	rdb_tx_end(&tx);
 out_svc:
 	pool_svc_put_leader(svc);
-	return rc;
+
+	if (rc != 0)
+		return rc;
+
+	/* Send the handles to the targets
+	 *
+	 * Note - nhandles and the handles_uuids array might have changed by
+	 * this point (reallocated by callback iterator)
+	 */
+	//TODO better DEBUG PRINT HANDLES
+	D_DEBUG(DF_DSMS, DF_UUID": need to re-distribute %u handles\n",
+		DP_UUID(pool_uuid), nhandles);
+
+	return redist_open_hdls_send_rpcs(pool_uuid, handles_uuids, nhandles,
+					  targets);
 }
 
 int
@@ -3886,6 +3963,39 @@ ds_pool_tgt_add_in(uuid_t pool_uuid, struct pool_target_id_list *list)
 {
 	return ds_pool_update_internal(pool_uuid, list, POOL_ADD_IN,
 				       NULL, NULL, NULL, false);
+}
+
+
+/**
+ * Allocates and returns a list of unique ranks based on the input target list.
+ *
+ * Caller must free output list
+ *
+ * \param in[IN]   Input list to synthesize
+ * \param out[OUT] Unique output list. Will be set to NULL if allocation failed
+ */
+static void
+addr_list_to_rank_list(struct pool_target_addr_list *in, d_rank_list_t **out)
+{
+	d_rank_list_t *tmplist;
+	int i;
+
+	*out = NULL;
+
+	tmplist = d_rank_list_alloc(in->pta_number);
+	if (tmplist == NULL)
+		return;
+
+	for (i = 0; i < in->pta_number; i++) {
+		memcpy(&tmplist->rl_ranks[i], &in->pta_addrs[i].pta_rank,
+		       sizeof(d_rank_t));
+	}
+
+	/* Make sure the list is unique, some targets might share ranks */
+	d_rank_list_dup_sort_uniq(out, tmplist);
+
+	/* Free the intermediate list */
+	d_rank_list_free(tmplist);
 }
 
 /*
@@ -3926,7 +4036,13 @@ ds_pool_update(uuid_t pool_uuid, crt_opcode_t opc,
 	 * handles to that node prior to starting the rebuild/migration process
 	 */
 	if (opc == POOL_ADD) {
-		rc = redist_open_hdls(pool_uuid);
+		d_rank_list_t *ranks;
+		addr_list_to_rank_list(list, &ranks);
+		if (ranks == NULL)
+			D_GOTO(out, rc);
+
+		rc = redist_open_hdls(pool_uuid, ranks);
+		d_rank_list_free(ranks);
 		if (rc) {
 			D_ERROR("redist_open_hdls fails rc: "DF_RC"\n",
 				DP_RC(rc));

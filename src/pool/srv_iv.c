@@ -537,26 +537,24 @@ pool_iv_map_fetch(void *ns, struct pool_iv_entry *pool_iv)
 
 static int
 pool_iv_update(void *ns, int class_id, struct pool_iv_entry *pool_iv,
-	       uint32_t pool_iv_len, unsigned int shortcut,
+	       struct pool_iv_key *pool_key, unsigned int shortcut,
 	       unsigned int sync_mode, bool retry)
 {
 	d_sg_list_t		sgl;
 	d_iov_t			iov;
 	struct ds_iv_key	key;
-	struct pool_iv_key	*pool_key;
 	int			rc;
 
 	iov.iov_buf = pool_iv;
-	iov.iov_len = pool_iv_len;
-	iov.iov_buf_len = pool_iv_len;
+	iov.iov_len = pool_key->pik_entry_size;
+	iov.iov_buf_len = pool_key->pik_entry_size;
 	sgl.sg_nr = 1;
 	sgl.sg_nr_out = 0;
 	sgl.sg_iovs = &iov;
 
 	memset(&key, 0, sizeof(key));
 	key.class_id = class_id;
-	pool_key = (struct pool_iv_key *)key.key_buf;
-	pool_key->pik_entry_size = pool_iv_len;
+	memcpy(key.key_buf, pool_key, sizeof(struct pool_iv_key));
 	rc = ds_iv_update(ns, &key, &sgl, shortcut, sync_mode, 0, retry);
 	if (rc)
 		D_ERROR("iv update failed "DF_RC"\n", DP_RC(rc));
@@ -569,6 +567,7 @@ ds_pool_iv_map_update(struct ds_pool *pool, struct pool_buf *buf,
 		      uint32_t map_ver)
 {
 	struct pool_iv_entry	*iv_entry;
+	struct pool_iv_key	 pool_key;
 	uint32_t		 size;
 	int			 rc;
 
@@ -589,7 +588,8 @@ ds_pool_iv_map_update(struct ds_pool *pool, struct pool_buf *buf,
 	 * since there is no easy way to free the iv_entry buffer. Needs
 	 * to revisit here once pool/cart_group/IV is upgraded.
 	 */
-	rc = pool_iv_update(pool->sp_iv_ns, IV_POOL_MAP, iv_entry, size,
+	pool_key.pik_entry_size = size;
+	rc = pool_iv_update(pool->sp_iv_ns, IV_POOL_MAP, iv_entry, &pool_key,
 			    CRT_IV_SHORTCUT_NONE, CRT_IV_SYNC_EAGER, false);
 	if (rc != 0)
 		D_DEBUG(DB_MD, DF_UUID": map_ver=%u: %d\n",
@@ -614,6 +614,7 @@ ds_pool_iv_hdl_update(struct ds_pool *pool, uuid_t hdl_uuid, uint64_t flags,
 {
 	struct pool_iv_entry	*iv_entry;
 	struct pool_iv_conn	*pic;
+	struct pool_iv_key	pool_key;
 	size_t			size;
 	int			rc;
 
@@ -631,11 +632,49 @@ ds_pool_iv_hdl_update(struct ds_pool *pool, uuid_t hdl_uuid, uint64_t flags,
 	pic->pic_cred_size = cred->iov_len;
 	memcpy(&pic->pic_creds[0], cred->iov_buf, cred->iov_len);
 
-	rc = pool_iv_update(pool->sp_iv_ns, IV_POOL_CONN, iv_entry, size,
+	pool_key.pik_entry_size = size;
+	uuid_copy(pool_key.poh_uuid, hdl_uuid);
+	rc = pool_iv_update(pool->sp_iv_ns, IV_POOL_CONN, iv_entry, &pool_key,
 			    CRT_IV_SHORTCUT_NONE, CRT_IV_SYNC_EAGER, false);
 	D_DEBUG(DB_MD, DF_UUID" distribute hdl "DF_UUID" capas "DF_U64" %d\n",
 		DP_UUID(pool->sp_uuid), DP_UUID(hdl_uuid), sec_capas, rc);
 	D_FREE(iv_entry);
+	return rc;
+}
+
+/**
+ * Fetches an open pool handle by uuid
+ *
+ * \param ns [IN]       pool iv namespace
+ * \param hdl_uuid [IN] pool open handle uuid to retrieve
+ * \param pool_iv [OUT] iov buff to store data into. Will be reallocated if not
+ *                      large enough to store full value. Will contain a
+ *                      struct pool_iv_entry on success
+ *
+ * \return              0 if succeeds, error code otherwise.
+ */
+int
+pool_iv_hdl_fetch(void *ns, uuid_t hdl_uuid, d_iov_t *pool_iv)
+{
+	d_sg_list_t		sgl = { 0 };
+	uint32_t		pool_iv_len = 0;
+	struct ds_iv_key	key;
+	struct pool_iv_key	*pool_key;
+	int			rc;
+
+	sgl.sg_nr = 1;
+	sgl.sg_nr_out = 0;
+	sgl.sg_iovs = pool_iv;
+
+	memset(&key, 0, sizeof(key));
+	key.class_id = IV_POOL_CONN;
+	pool_key = (struct pool_iv_key *)key.key_buf;
+	pool_key->pik_entry_size = pool_iv_len;
+	uuid_copy(pool_key->poh_uuid, hdl_uuid);
+	rc = ds_iv_fetch(ns, &key, &sgl, false /* retry */);
+	if (rc)
+		D_ERROR("iv fetch failed "DF_RC"\n", DP_RC(rc));
+
 	return rc;
 }
 
@@ -718,6 +757,7 @@ int
 ds_pool_iv_prop_update(struct ds_pool *pool, daos_prop_t *prop)
 {
 	struct pool_iv_entry	*iv_entry;
+	struct pool_iv_key	 pool_key;
 	struct daos_prop_entry	*prop_entry;
 	d_rank_list_t		*svc_list;
 	uint32_t		 size;
@@ -739,7 +779,8 @@ ds_pool_iv_prop_update(struct ds_pool *pool, daos_prop_t *prop)
 	uuid_copy(iv_entry->piv_pool_uuid, pool->sp_uuid);
 	pool_iv_prop_l2g(prop, &iv_entry->piv_prop);
 
-	rc = pool_iv_update(pool->sp_iv_ns, IV_POOL_PROP, iv_entry, size,
+	pool_key.pik_entry_size = size;
+	rc = pool_iv_update(pool->sp_iv_ns, IV_POOL_PROP, iv_entry, &pool_key,
 			    CRT_IV_SHORTCUT_NONE, CRT_IV_SYNC_LAZY, true);
 	if (rc)
 		D_ERROR("pool_iv_update failed "DF_RC"\n", DP_RC(rc));
