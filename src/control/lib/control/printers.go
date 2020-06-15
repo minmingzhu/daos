@@ -32,6 +32,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 
+	"github.com/daos-stack/daos/src/control/fault"
 	"github.com/daos-stack/daos/src/control/lib/txtfmt"
 	"github.com/daos-stack/daos/src/control/server/storage"
 )
@@ -85,9 +86,9 @@ func getPrintConfig(opts ...PrintConfigOption) *PrintConfig {
 	return cfg
 }
 
-// getPrintHosts is a helper that transforms the given list of
+// GetPrintHosts is a helper that transforms the given list of
 // host strings according to the format configuration.
-func getPrintHosts(in string, opts ...PrintConfigOption) string {
+func GetPrintHosts(in string, opts ...PrintConfigOption) string {
 	var out []string
 	fc := getPrintConfig(opts...)
 
@@ -123,9 +124,16 @@ func PrintHostErrorsMap(hem HostErrorsMap, out io.Writer, opts ...PrintConfigOpt
 	table := []txtfmt.TableRow{}
 
 	for _, errStr := range hem.Keys() {
-		errHosts := getPrintHosts(hem[errStr].RangedString(), opts...)
+		errHosts := GetPrintHosts(hem[errStr].HostSet.RangedString(), opts...)
 		row := txtfmt.TableRow{setTitle: errHosts}
-		row[errTitle] = errStr
+
+		// Unpack the root cause error. If it's a fault,
+		// just print the description.
+		hostErr := errors.Cause(hem[errStr].HostError)
+		row[errTitle] = hostErr.Error()
+		if f, ok := hostErr.(*fault.Fault); ok {
+			row[errTitle] = f.Description
+		}
 
 		table = append(table, row)
 	}
@@ -279,7 +287,7 @@ func printScmMountPoints(mountpoints storage.ScmMountPoints, out io.Writer, opts
 func printHostStorageMapVerbose(hsm HostStorageMap, out io.Writer, opts ...PrintConfigOption) error {
 	for _, key := range hsm.Keys() {
 		hss := hsm[key]
-		hosts := getPrintHosts(hss.HostSet.RangedString(), opts...)
+		hosts := GetPrintHosts(hss.HostSet.RangedString(), opts...)
 		lineBreak := strings.Repeat("-", len(hosts))
 		fmt.Fprintf(out, "%s\n%s\n%s\n", lineBreak, hosts, lineBreak)
 		if len(hss.HostStorage.ScmNamespaces) == 0 {
@@ -323,7 +331,7 @@ func PrintHostStorageMap(hsm HostStorageMap, out io.Writer, opts ...PrintConfigO
 
 	for _, key := range hsm.Keys() {
 		hss := hsm[key]
-		hosts := getPrintHosts(hss.HostSet.RangedString(), opts...)
+		hosts := GetPrintHosts(hss.HostSet.RangedString(), opts...)
 		row := txtfmt.TableRow{hostsTitle: hosts}
 		if len(hss.HostStorage.ScmNamespaces) == 0 {
 			row[scmTitle] = hss.HostStorage.ScmModules.Summary()
@@ -356,7 +364,7 @@ func PrintStoragePrepareMap(hsm HostStorageMap, out io.Writer, opts ...PrintConf
 
 	for _, key := range hsm.Keys() {
 		hss := hsm[key]
-		hosts := getPrintHosts(hss.HostSet.RangedString(), opts...)
+		hosts := GetPrintHosts(hss.HostSet.RangedString(), opts...)
 		row := txtfmt.TableRow{hostsTitle: hosts}
 		row[scmTitle] = hss.HostStorage.ScmNamespaces.Summary()
 		row[rebootTitle] = fmt.Sprintf("%t", hss.HostStorage.RebootRequired)
@@ -396,7 +404,7 @@ func printNvmeFormatResults(devices storage.NvmeControllers, out io.Writer, opts
 func printStorageFormatMapVerbose(hsm HostStorageMap, out io.Writer, opts ...PrintConfigOption) error {
 	for _, key := range hsm.Keys() {
 		hss := hsm[key]
-		hosts := getPrintHosts(hss.HostSet.RangedString(), opts...)
+		hosts := GetPrintHosts(hss.HostSet.RangedString(), opts...)
 		lineBreak := strings.Repeat("-", len(hosts))
 		fmt.Fprintf(out, "%s\n%s\n%s\n", lineBreak, hosts, lineBreak)
 		if err := printScmMountPoints(hss.HostStorage.ScmMountPoints, out, opts...); err != nil {
@@ -435,7 +443,7 @@ func PrintStorageFormatMap(hsm HostStorageMap, out io.Writer, opts ...PrintConfi
 
 	for _, key := range hsm.Keys() {
 		hss := hsm[key]
-		hosts := getPrintHosts(hss.HostSet.RangedString(), opts...)
+		hosts := GetPrintHosts(hss.HostSet.RangedString(), opts...)
 		row := txtfmt.TableRow{hostsTitle: hosts}
 		row[scmTitle] = fmt.Sprintf("%d", len(hss.HostStorage.ScmMountPoints))
 		row[nvmeTitle] = fmt.Sprintf("%d", len(hss.HostStorage.NvmeDevices))

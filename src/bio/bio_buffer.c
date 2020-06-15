@@ -651,24 +651,6 @@ add_region:
 			      biov->bi_addr.ba_type);
 }
 
-void
-bio_memcpy(struct bio_desc *biod, uint16_t media, void *media_addr,
-	   void *addr, ssize_t n)
-{
-	struct umem_instance *umem = biod->bd_ctxt->bic_umem;
-
-	if (biod->bd_update && media == DAOS_MEDIA_SCM) {
-		/* NB: pmemobj_tx_commit will drain HW buffer */
-		pmemobj_memcpy(umem->umm_pool, media_addr, addr, n,
-			       PMEMOBJ_F_MEM_NODRAIN);
-	} else {
-		if (biod->bd_update)
-			memcpy(media_addr, addr, n);
-		else
-			memcpy(addr, media_addr, n);
-	}
-}
-
 static void
 scm_rw(struct bio_desc *biod, struct bio_rsrvd_region *rg)
 {
@@ -818,7 +800,27 @@ dma_rw(struct bio_desc *biod)
 	}
 
 	biod->bd_ctxt->bic_inflight_dmas--;
-	D_DEBUG(DB_IO, "DMA done, update:%d\n", biod->bd_update);
+}
+
+void
+bio_memcpy(struct bio_desc *biod, uint16_t media, void *media_addr,
+	   void *addr, ssize_t n)
+{
+	struct umem_instance *umem = biod->bd_ctxt->bic_umem;
+
+	if (biod->bd_update && media == DAOS_MEDIA_SCM) {
+		/*
+		 * We could do no_drain copy and rely on the tx commit to
+		 * drain controller, however, test shows calling a persistent
+		 * copy and drain controller here is faster.
+		 */
+		pmemobj_memcpy_persist(umem->umm_pool, media_addr, addr, n);
+	} else {
+		if (biod->bd_update)
+			memcpy(media_addr, addr, n);
+		else
+			memcpy(addr, media_addr, n);
+	}
 }
 
 static int
@@ -1013,6 +1015,36 @@ bio_iod_copy(struct bio_desc *biod, d_sg_list_t *sgls, unsigned int nr_sgl)
 	arg.ca_sgl_cnt = nr_sgl;
 
 	return iterate_biov(biod, copy_one, &arg);
+}
+
+static int
+flush_one(struct bio_desc *biod, struct bio_iov *biov,
+	  struct bio_copy_args *arg)
+{
+	struct umem_instance *umem = biod->bd_ctxt->bic_umem;
+
+	D_ASSERT(arg == NULL);
+	D_ASSERT(biov);
+
+	if (bio_addr_is_hole(&biov->bi_addr))
+		return 0;
+
+	if (biov->bi_addr.ba_type != DAOS_MEDIA_SCM)
+		return 0;
+
+	D_ASSERT(bio_iov2raw_buf(biov) != NULL);
+	D_ASSERT(bio_iov2req_len(biov) != 0);
+	pmemobj_flush(umem->umm_pool, bio_iov2req_buf(biov),
+		      bio_iov2req_len(biov));
+	return 0;
+}
+
+void
+bio_iod_flush(struct bio_desc *biod)
+{
+	D_ASSERT(biod->bd_buffer_prep);
+	if (biod->bd_update)
+		iterate_biov(biod, flush_one, NULL);
 }
 
 static int

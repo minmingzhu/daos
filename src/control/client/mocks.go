@@ -25,7 +25,6 @@ package client
 
 import (
 	"io"
-	"sort"
 
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
@@ -69,12 +68,6 @@ var (
 			State:    &MockState,
 		},
 	}
-	MockACL = &common.MockACLResult{
-		Acl: []string{
-			"A::OWNER@:rw",
-			"A::GROUP@:r",
-		},
-	}
 	MockErr = errors.New("unknown failure")
 )
 
@@ -114,7 +107,7 @@ type mockMgmtCtlClient struct {
 
 func (m *mockMgmtCtlClient) StoragePrepare(ctx context.Context, req *ctlpb.StoragePrepareReq, o ...grpc.CallOption) (*ctlpb.StoragePrepareResp, error) {
 	// return successful prepare results, state member messages
-	// initialise with zero values indicating mgmt.CTL_SUCCESS
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
 	return &ctlpb.StoragePrepareResp{
 		Nvme: &ctlpb.PrepareNvmeResp{
 			State: &MockSuccessState,
@@ -127,7 +120,7 @@ func (m *mockMgmtCtlClient) StoragePrepare(ctx context.Context, req *ctlpb.Stora
 
 func (m *mockMgmtCtlClient) StorageScan(ctx context.Context, req *ctlpb.StorageScanReq, o ...grpc.CallOption) (*ctlpb.StorageScanResp, error) {
 	// return successful query results, state member messages
-	// initialise with zero values indicating mgmt.CTL_SUCCESS
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
 	return &ctlpb.StorageScanResp{
 		Nvme: &ctlpb.ScanNvmeResp{
 			State:  &MockSuccessState,
@@ -153,12 +146,8 @@ func (m *mgmtCtlNetworkScanDevicesClient) Recv() (*ctlpb.DeviceScanReply, error)
 	return &ctlpb.DeviceScanReply{}, nil
 }
 
-func (m *mockMgmtCtlClient) NetworkScanDevices(ctx context.Context, in *ctlpb.DeviceScanRequest, o ...grpc.CallOption) (ctlpb.MgmtCtl_NetworkScanDevicesClient, error) {
-	return &mgmtCtlNetworkScanDevicesClient{}, nil
-}
-
-func (m *mockMgmtCtlClient) NetworkListProviders(ctx context.Context, in *ctlpb.ProviderListRequest, o ...grpc.CallOption) (*ctlpb.ProviderListReply, error) {
-	return &ctlpb.ProviderListReply{}, nil
+func (m *mockMgmtCtlClient) NetworkScan(ctx context.Context, in *ctlpb.NetworkScanReq, o ...grpc.CallOption) (*ctlpb.NetworkScanResp, error) {
+	return &ctlpb.NetworkScanResp{}, nil
 }
 
 func (m *mockMgmtCtlClient) SystemQuery(ctx context.Context, req *ctlpb.SystemQueryReq, o ...grpc.CallOption) (*ctlpb.SystemQueryResp, error) {
@@ -167,6 +156,10 @@ func (m *mockMgmtCtlClient) SystemQuery(ctx context.Context, req *ctlpb.SystemQu
 
 func (m *mockMgmtCtlClient) SystemStop(ctx context.Context, req *ctlpb.SystemStopReq, o ...grpc.CallOption) (*ctlpb.SystemStopResp, error) {
 	return &ctlpb.SystemStopResp{}, nil
+}
+
+func (m *mockMgmtCtlClient) SystemResetFormat(ctx context.Context, req *ctlpb.SystemResetFormatReq, o ...grpc.CallOption) (*ctlpb.SystemResetFormatResp, error) {
+	return &ctlpb.SystemResetFormatResp{}, nil
 }
 
 func (m *mockMgmtCtlClient) SystemStart(ctx context.Context, req *ctlpb.SystemStartReq, o ...grpc.CallOption) (*ctlpb.SystemStartResp, error) {
@@ -178,7 +171,7 @@ type mockControlConfig struct {
 	connectErr     error
 }
 
-// implement mock/stub behaviour for Control
+// implement mock/stub behavior for Control
 type mockControl struct {
 	address   string
 	cfg       mockControlConfig
@@ -276,7 +269,7 @@ func newMockConnect(log logging.Logger,
 	state connectivity.State, ctrlrs NvmeControllers,
 	ctrlrResults NvmeControllerResults, modules ScmModules,
 	moduleResults ScmModuleResults, pmems ScmNamespaces, mountResults ScmMountResults,
-	scanRet error, formatRet error, killRet error, connectRet error, ACLRet *common.MockACLResult,
+	scanRet error, formatRet error, killRet error, connectRet error,
 	listPoolsRet *common.MockListPoolsResult) *connList {
 
 	return &connList{
@@ -298,7 +291,6 @@ func newMockConnect(log logging.Logger,
 				formatRet:             formatRet,
 			},
 			svcClientCfg: MockMgmtSvcClientConfig{
-				ACLRet:       ACLRet,
 				ListPoolsRet: listPoolsRet,
 				KillErr:      killRet,
 			},
@@ -310,27 +302,5 @@ func defaultMockConnect(log logging.Logger) Connect {
 	return newMockConnect(
 		log, connectivity.Ready, MockCtrlrs, MockCtrlrResults, MockScmModules,
 		MockModuleResults, MockScmNamespaces, MockMountResults,
-		nil, nil, nil, nil, MockACL, nil)
-}
-
-// MockScanResp mocks scan results from scm and nvme for multiple servers.
-// Each result indicates success or failure through presence of Err.
-func MockScanResp(cs *NvmeControllers, ms *ScmModules, nss *ScmNamespaces, addrs Addresses) *StorageScanResp {
-	nvmeResults := make(NvmeScanResults)
-	scmResults := make(ScmScanResults)
-
-	for _, addr := range addrs {
-		nvmeResults[addr] = &NvmeScanResult{Ctrlrs: *cs}
-
-		sResult := &ScmScanResult{}
-		modules, _ := ms.ToNative()
-		namespaces, _ := nss.ToNative()
-		sResult.Modules = modules
-		sResult.Namespaces = namespaces
-		scmResults[addr] = sResult
-	}
-
-	sort.Strings(addrs)
-
-	return &StorageScanResp{Servers: addrs, Nvme: nvmeResults, Scm: scmResults}
+		nil, nil, nil, nil, nil)
 }

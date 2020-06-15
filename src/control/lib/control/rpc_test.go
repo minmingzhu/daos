@@ -41,13 +41,7 @@ import (
 	"github.com/daos-stack/daos/src/control/logging"
 )
 
-type dummyMessage struct{}
-
-func (dm *dummyMessage) Reset()         {}
-func (dm *dummyMessage) String() string { return "" }
-func (dm *dummyMessage) ProtoMessage()  {}
-
-var defaultMessage = &dummyMessage{}
+var defaultMessage = &MockMessage{}
 
 type testRequest struct {
 	rpcFn    unaryRPC
@@ -84,7 +78,7 @@ type ctxCancel struct {
 }
 
 func TestControl_InvokeUnaryRPCAsync(t *testing.T) {
-	clientCfg := DefaultClientConfig()
+	clientCfg := DefaultConfig()
 	clientCfg.TransportConfig.AllowInsecure = true
 
 	for name, tc := range map[string]struct {
@@ -147,7 +141,7 @@ func TestControl_InvokeUnaryRPCAsync(t *testing.T) {
 			goRoutinesAtStart := runtime.NumGoroutine()
 
 			client := NewClient(
-				WithClientConfig(clientCfg),
+				WithConfig(clientCfg),
 				WithClientLogger(log),
 			)
 
@@ -207,7 +201,7 @@ func TestControl_InvokeUnaryRPCAsync(t *testing.T) {
 }
 
 func TestControl_InvokeUnaryRPC(t *testing.T) {
-	clientCfg := DefaultClientConfig()
+	clientCfg := DefaultConfig()
 	clientCfg.TransportConfig.AllowInsecure = true
 
 	for name, tc := range map[string]struct {
@@ -272,7 +266,7 @@ func TestControl_InvokeUnaryRPC(t *testing.T) {
 			defer common.ShowBufferOnFailure(t, buf)
 
 			client := NewClient(
-				WithClientConfig(clientCfg),
+				WithConfig(clientCfg),
 				WithClientLogger(log),
 			)
 

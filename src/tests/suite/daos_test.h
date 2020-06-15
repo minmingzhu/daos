@@ -243,6 +243,7 @@ async_disable(void **state)
 	return 0;
 }
 
+#if 0
 static inline int
 async_overlap(void **state)
 {
@@ -252,6 +253,7 @@ async_overlap(void **state)
 	arg->async   = true;
 	return 0;
 }
+#endif
 
 static inline int
 test_case_teardown(void **state)
@@ -293,6 +295,7 @@ int run_daos_dtx_test(int rank, int size, int *tests, int test_size);
 int run_daos_vc_test(int rank, int size, int *tests, int test_size);
 int run_daos_checksum_test(int rank, int size, int *sub_tests,
 			   int sub_tests_size);
+unsigned int daos_checksum_test_arg2type(char *optarg);
 int run_daos_fs_test(int rank, int size, int *tests, int test_size);
 int run_daos_nvme_recov_test(int rank, int size, int *sub_tests,
 			     int sub_tests_size);
@@ -337,6 +340,10 @@ void rebuild_io_validate(test_arg_t *arg, daos_obj_id_t *oids, int oids_nr,
 			 bool discard);
 void rebuild_single_pool_target(test_arg_t *arg, d_rank_t failed_rank,
 				int failed_tgt);
+
+void reintegrate_single_pool_target(test_arg_t *arg, d_rank_t failed_rank,
+				int failed_tgt);
+
 void rebuild_add_back_tgts(test_arg_t *arg, d_rank_t failed_rank,
 			   int *failed_tgts, int nr);
 

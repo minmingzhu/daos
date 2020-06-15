@@ -129,7 +129,6 @@ var MockPoolList = []*mgmtpb.ListPoolsResp_Pool{
 }
 
 type MockMgmtSvcClientConfig struct {
-	ACLRet            *common.MockACLResult
 	ListPoolsRet      *common.MockListPoolsResult
 	KillErr           error
 	PoolQueryResult   *mgmtpb.PoolQueryResp
@@ -149,20 +148,34 @@ func NewMockMgmtSvcClient(cfg MockMgmtSvcClientConfig) mgmtpb.MgmtSvcClient {
 
 func (m *MockMgmtSvcClient) PoolCreate(ctx context.Context, req *mgmtpb.PoolCreateReq, o ...grpc.CallOption) (*mgmtpb.PoolCreateResp, error) {
 	// return successful pool creation results
-	// initialise with zero values indicating mgmt.CTL_SUCCESS
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
 	return &mgmtpb.PoolCreateResp{}, nil
 }
 
 func (m *MockMgmtSvcClient) PoolDestroy(ctx context.Context, req *mgmtpb.PoolDestroyReq, o ...grpc.CallOption) (*mgmtpb.PoolDestroyResp, error) {
 	// return successful pool destroy results
-	// initialise with zero values indicating mgmt.CTL_SUCCESS
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
 	return &mgmtpb.PoolDestroyResp{}, nil
+}
+
+func (m *MockMgmtSvcClient) PoolExtend(ctx context.Context, req *mgmtpb.PoolExtendReq, o ...grpc.CallOption) (*mgmtpb.PoolExtendResp, error) {
+	return &mgmtpb.PoolExtendResp{}, nil
+}
+
+func (m *MockMgmtSvcClient) PoolEvict(ctx context.Context, req *mgmtpb.PoolEvictReq, o ...grpc.CallOption) (*mgmtpb.PoolEvictResp, error) {
+	return &mgmtpb.PoolEvictResp{}, nil
 }
 
 func (m *MockMgmtSvcClient) PoolReintegrate(ctx context.Context, req *mgmtpb.PoolReintegrateReq, o ...grpc.CallOption) (*mgmtpb.PoolReintegrateResp, error) {
 	// return successful pool reintegrate results
-	// initialise with zero values indicating mgmt.CTL_SUCCESS
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
 	return &mgmtpb.PoolReintegrateResp{}, nil
+}
+
+func (m *MockMgmtSvcClient) PoolExclude(ctx context.Context, req *mgmtpb.PoolExcludeReq, o ...grpc.CallOption) (*mgmtpb.PoolExcludeResp, error) {
+	// return successful pool Exclude results
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
+	return &mgmtpb.PoolExcludeResp{}, nil
 }
 
 func (m *MockMgmtSvcClient) PoolQuery(ctx context.Context, req *mgmtpb.PoolQueryReq, _ ...grpc.CallOption) (*mgmtpb.PoolQueryResp, error) {
@@ -181,10 +194,7 @@ func (m *MockMgmtSvcClient) PoolSetProp(ctx context.Context, req *mgmtpb.PoolSet
 
 // returnACLResult returns the mock ACL results - either an error or an ACLResp
 func (m *MockMgmtSvcClient) returnACLResult() (*mgmtpb.ACLResp, error) {
-	if m.Cfg.ACLRet.Err != nil {
-		return nil, m.Cfg.ACLRet.Err
-	}
-	return &mgmtpb.ACLResp{ACL: m.Cfg.ACLRet.Acl, Status: m.Cfg.ACLRet.Status}, nil
+	return nil, nil
 }
 
 func (m *MockMgmtSvcClient) PoolGetACL(ctx context.Context, req *mgmtpb.GetACLReq, o ...grpc.CallOption) (*mgmtpb.ACLResp, error) {
@@ -206,35 +216,35 @@ func (m *MockMgmtSvcClient) PoolDeleteACL(ctx context.Context, req *mgmtpb.Delet
 func (m *MockMgmtSvcClient) BioHealthQuery(ctx context.Context, req *mgmtpb.BioHealthReq, o ...grpc.CallOption) (*mgmtpb.BioHealthResp, error) {
 
 	// return successful bio health results
-	// initialise with zero values indicating mgmt.CTL_SUCCESS
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
 	return &mgmtpb.BioHealthResp{}, nil
 }
 
 func (m *MockMgmtSvcClient) SmdListDevs(ctx context.Context, req *mgmtpb.SmdDevReq, o ...grpc.CallOption) (*mgmtpb.SmdDevResp, error) {
 
 	// return successful SMD device list
-	// initialise with zero values indicating mgmt.CTL_SUCCESS
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
 	return &mgmtpb.SmdDevResp{}, nil
 }
 
 func (m *MockMgmtSvcClient) SmdListPools(ctx context.Context, req *mgmtpb.SmdPoolReq, o ...grpc.CallOption) (*mgmtpb.SmdPoolResp, error) {
 
 	// return successful SMD pool list
-	// initialise with zero values indicating mgmt.CTL_SUCCESS
+	// initialize with zero values indicating mgmt.CTL_SUCCESS
 	return &mgmtpb.SmdPoolResp{}, nil
 }
 
 func (m *MockMgmtSvcClient) DevStateQuery(ctx context.Context, req *mgmtpb.DevStateReq, o ...grpc.CallOption) (*mgmtpb.DevStateResp, error) {
 
 	// return successful device state
-	// initialise with zero values indicating mgmt.CTRL_SUCCESS
+	// initialize with zero values indicating mgmt.CTRL_SUCCESS
 	return &mgmtpb.DevStateResp{}, nil
 }
 
 func (m *MockMgmtSvcClient) StorageSetFaulty(ctx context.Context, req *mgmtpb.DevStateReq, o ...grpc.CallOption) (*mgmtpb.DevStateResp, error) {
 
 	// return suscessful FAULTY device state
-	// initialise with zero values indicating mgmt.CTRL_SUCCESS
+	// initialize with zero values indicating mgmt.CTRL_SUCCESS
 	return &mgmtpb.DevStateResp{}, nil
 }
 
@@ -275,6 +285,10 @@ func (m *MockMgmtSvcClient) PingRanks(ctx context.Context, req *mgmtpb.RanksReq,
 	return &mgmtpb.RanksResp{}, nil
 }
 
+func (m *MockMgmtSvcClient) ResetFormatRanks(ctx context.Context, req *mgmtpb.RanksReq, o ...grpc.CallOption) (*mgmtpb.RanksResp, error) {
+	return &mgmtpb.RanksResp{}, nil
+}
+
 func (m *MockMgmtSvcClient) StartRanks(ctx context.Context, req *mgmtpb.RanksReq, o ...grpc.CallOption) (*mgmtpb.RanksResp, error) {
 	return &mgmtpb.RanksResp{}, nil
 }
@@ -293,4 +307,8 @@ func (m *MockMgmtSvcClient) LeaderQuery(ctx context.Context, req *mgmtpb.LeaderQ
 func (m *MockMgmtSvcClient) ListContainers(ctx context.Context, req *mgmtpb.ListContReq, o ...grpc.CallOption) (*mgmtpb.ListContResp, error) {
 	// return successful list containers results
 	return &mgmtpb.ListContResp{}, nil
+}
+
+func (m *MockMgmtSvcClient) ContSetOwner(ctx context.Context, req *mgmtpb.ContSetOwnerReq, o ...grpc.CallOption) (*mgmtpb.ContSetOwnerResp, error) {
+	return nil, nil
 }
