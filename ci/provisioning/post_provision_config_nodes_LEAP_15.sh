@@ -13,6 +13,14 @@ post_provision_config_nodes() {
     #                 slurm-example-configs slurmctld slurm-slurmmd
     #fi
     
+    # Temp fix for broken mirror until snapshot is rebuilt to not use it.
+    zypper --non-interactive mr -d openSUSE-Leap-15.1-1 || true 
+    zypper --non-interactive mr -d openSUSE-Leap-15.1-Non-Oss || true
+    zypper --non-interactive mr -d openSUSE-Leap-15.1-Oss || true
+    zypper --non-interactive mr -d openSUSE-Leap-15.1-Update || true
+    zypper --non-interactive mr -d openSUSE-Leap-15.1-Update-Non-Oss || true
+    zypper --non-interactive rm fuse
+
     echo 'solver.allowVendorChange = true' >> /etc/zypp/zypp.conf
     # because our Nexus is broken
     zypper --non-interactive ar \

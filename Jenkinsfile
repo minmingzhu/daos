@@ -144,11 +144,24 @@ def update_kernel(int num_nodes) {
                '"set -ex; uname -a"'
 }
 
+String qb_inst_rpms_functional() {
+    if (quickbuild()) {
+        // TODO: these should be gotten from the Requires: of RPMs
+        return "spdk-tools"
+    }
+}
+
+String qb_inst_rpms_run_test() {
+    if (quickbuild()) {
+        // TODO: these should be gotten from the Requires: of RPMs
+        return qb_inst_rpms_functional() + "mercury boost-devel"
+    }
+}
+
 target_branch = env.CHANGE_TARGET ? env.CHANGE_TARGET : env.BRANCH_NAME
 def arch = ""
 def sanitized_JOB_NAME = JOB_NAME.toLowerCase().replaceAll('/', '-').replaceAll('%2f', '-')
 
-def qb_inst_rpms = ""
 el7_component_repos = ""
 leap15_component_repos = ""
 def functional_rpms = "openmpi3 hwloc ndctl " +
@@ -1016,12 +1029,6 @@ pipeline {
                         label 'ci_vm1'
                     }
                     steps {
-                        script {
-                            if (quickbuild()) {
-                                // TODO: these should be gotten from the Requires: of RPMs
-                                qb_inst_rpms = " spdk-tools mercury boost-devel"
-                            }
-                        }
                         provisionNodes NODELIST: env.NODELIST,
                                        node_count: 1,
                                        profile: 'daos_ci',
@@ -1037,7 +1044,7 @@ pipeline {
                                                   'spdk-devel libfabric-devel '+
                                                   'pmix numactl-devel ' +
                                                   'libipmctl-devel' +
-                                                  qb_inst_rpms
+                                                  ' ' + qb_inst_rpms_run_test()
                         timeout(time:60, unit:'MINUTES') {
                           runTest stashes: [ 'centos7-gcc-tests',
                                            'centos7-gcc-install',
@@ -1176,7 +1183,8 @@ pipeline {
                                        snapshot: true,
                                        inst_repos: el7_daos_repos(),
                                        inst_rpms: get_daos_packages('centos7') + ' ' +
-                                                  el7_functional_rpms
+                                                  el7_functional_rpms + ' ' +
+                                                  qb_inst_rpms_functional()
                         runTestFunctional stashes: [ 'centos7-gcc-install',
                                                      'centos7-gcc-build-vars' ],
                                           test_rpms: env.TEST_RPMS,
@@ -1209,7 +1217,8 @@ pipeline {
                                        snapshot: true,
                                        inst_repos: leap15_daos_repos(),
                                        inst_rpms: get_daos_packages('leap15') + ' ' +
-                                                  leap15_functional_rpms
+                                                  leap15_functional_rpms + ' ' +
+                                                  qb_inst_rpms_functional()
                         update_kernel(9)
                         runTestFunctional stashes: [ 'leap15-gcc-install',
                                                      'leap15-gcc-build-vars' ],
@@ -1247,7 +1256,8 @@ pipeline {
                                        distro: 'opensuse15',
                                        inst_repos: leap15_daos_repos(),
                                        inst_rpms: get_daos_packages('leap15') + ' ' +
-                                                   leap15_functional_rpms
+                                                  leap15_functional_rpms + ' ' +
+                                                  qb_inst_rpms_functional()
                         runTestFunctional stashes: [ 'leap15-gcc-install',
                                                      'leap15-gcc-build-vars' ],
                                           test_rpms: env.TEST_RPMS,
@@ -1284,7 +1294,8 @@ pipeline {
                                        distro: 'opensuse15',
                                        inst_repos: leap15_daos_repos(),
                                        inst_rpms: get_daos_packages('leap15') + ' ' +
-                                                  leap15_functional_rpms
+                                                  leap15_functional_rpms + ' ' +
+                                                  qb_inst_rpms_functional()
                         update_kernel(5)
                         runTestFunctional stashes: [ 'leap15-gcc-install',
                                                      'leap15-gcc-build-vars' ],
@@ -1322,7 +1333,8 @@ pipeline {
                                        distro: 'opensuse15',
                                        inst_repos: leap15_daos_repos(),
                                        inst_rpms: get_daos_packages('leap15') + ' ' +
-                                                  leap15_functional_rpms
+                                                  leap15_functional_rpms + ' ' +
+                                                  qb_inst_rpms_functional()
                         update_kernel(9)
                         runTestFunctional stashes: [ 'leap15-gcc-install', 'leap15-gcc-build-vars' ],
                                           test_rpms: env.TEST_RPMS,
