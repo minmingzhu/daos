@@ -5,22 +5,38 @@ from env_modules import load_mpi
 from distutils.spawn import find_executable
 import os
 
+def add_rpaths(env, install_off):
+    """Add relative rpath entries"""
+    env.AppendUnique(RPATH_FULL=['$PREFIX/lib64'])
+    rpaths = env.subst("$RPATH_FULL").split()
+    prefix = env.get("PREFIX")
+    for rpath in rpaths:
+        if install_off is None:
+            env.AppendUnique(RPATH=[os.path.join(prefix, rpath)])
+            continue
+        relpath = os.path.relpath(rpath, prefix)
+        env.AppendUnique(RPATH=[Literal(r'\$$ORIGIN/%s/%s' % (install_off,
+                                                              relpath))])
+        if "prereq" in relpath:
+            # NB: Also use full path so intermediate linking works
+            env.AppendUnique(RPATH=[os.path.join(prefix, rpath)])
+
 def library(env, *args, **kwargs):
     """build SharedLibrary with relative RPATH"""
     denv = env.Clone()
-    denv.AppendUnique(RPATH=[Literal(r'\$$ORIGIN')])
+    add_rpaths(denv, kwargs.get('install_off', '..'))
     return denv.SharedLibrary(*args, **kwargs)
 
 def program(env, *args, **kwargs):
     """build Program with relative RPATH"""
     denv = env.Clone()
-    denv.AppendUnique(RPATH=[Literal(r'\$$ORIGIN/../lib64')])
+    add_rpaths(denv, kwargs.get('install_off', '..'))
     return denv.Program(*args, **kwargs)
 
 def test(env, *args, **kwargs):
     """build Program with fixed RPATH"""
     denv = env.Clone()
-    denv.AppendUnique(RPATH=["$PREFIX/lib64"])
+    add_rpaths(denv, kwargs.get("install_off", None))
     return denv.Program(*args, **kwargs)
 
 def install(env, subdir, files):
@@ -68,7 +84,7 @@ def _find_mpicc(env):
 def _configure_mpi_pkg(env, libs):
     """Configure MPI using pkg-config"""
     if GetOption('help'):
-        return
+        return "mpi"
     if _find_mpicc(env):
         return env.subst("$MPI_PKG")
     try:
@@ -84,7 +100,7 @@ def _configure_mpi_pkg(env, libs):
     libs.append('mpi')
     return env.subst("$MPI_PKG")
 
-def configure_mpi(prereqs, env, libs, required=None):
+def configure_mpi(env, libs, required=None):
     """Check if mpi exists and configure environment"""
     if env.subst("$MPI_PKG") != "":
         return _configure_mpi_pkg(env, libs)

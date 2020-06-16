@@ -3,6 +3,7 @@
 #pylint: disable=too-many-locals
 import sys
 import os
+import daos_build
 from os.path import join, isdir
 from os import urandom
 from binascii import b2a_hex
@@ -163,6 +164,8 @@ def scons():
     cartpath = Dir('#/src/cart/src/include').srcnode().abspath
 
     prereqs.require(denv, 'ofi', 'hwloc')
+
+    daos_build.add_rpaths(denv, "..")
 
     denv.AppendENVPath("CGO_LDFLAGS",
                        denv.subst("$_LIBDIRFLAGS "
